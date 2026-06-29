@@ -1,5 +1,6 @@
 'use client'
 
+import React from 'react'
 import { DAY_COLORS } from '@/lib/constants'
 
 interface Props {
@@ -38,7 +39,7 @@ export default function DaySelector({ days, selected, onSelect }: Props) {
                   ? 'text-white shadow ring-2 ring-offset-1'
                   : 'text-gray-500 bg-gray-100 hover:bg-gray-200'
               }`}
-              style={isSelected ? { backgroundColor: color, ringColor: color } : {}}
+              style={isSelected ? { backgroundColor: color, '--tw-ring-color': color } as React.CSSProperties : {}}
               title={`Day ${day}`}
             >
               {day}
