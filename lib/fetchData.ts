@@ -70,46 +70,60 @@ async function fetchDataTab() {
   }
 }
 
+const CACHE_KEY = 'vacances2026_stops'
+
+function loadCache(): Stop[] | null {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY)
+    if (!raw) return null
+    return JSON.parse(raw) as Stop[]
+  } catch { return null }
+}
+
+function saveCache(stops: Stop[]) {
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify(stops)) } catch {}
+}
+
 export async function fetchItinerary(): Promise<Stop[]> {
   if (!SHEET_GID) throw new Error('NEXT_PUBLIC_SHEET_GID is not set')
 
-  const res = await fetch(sheetUrl(SHEET_GID), { cache: 'no-store' })
-  if (!res.ok) throw new Error(`Sheets proxy returned ${res.status}`)
+  try {
+    const res = await fetch(sheetUrl(SHEET_GID), { cache: 'no-store' })
+    if (!res.ok) throw new Error(`Sheets proxy returned ${res.status}`)
 
-  const text = await res.text()
-  const rows = parseRows(text)
-  if (rows.length === 0) throw new Error('Itinerary loaded but 0 rows parsed — check column headers')
+    const text = await res.text()
+    const rows = parseRows(text)
+    if (rows.length === 0) throw new Error('Itinerary loaded but 0 rows parsed — check column headers')
 
-  console.log(`[fetchData] itinerary: ${rows.length} rows from Sheets`)
+    console.log(`[fetchData] itinerary: ${rows.length} rows from Sheets`)
 
-  // Enrich from data tab: coordinates + links
-  const dataLookup = await fetchDataTab()
+    const dataLookup = await fetchDataTab()
 
-  const stops: Stop[] = rows
-    .map(row => {
-      const d = dataLookup.get(row.nom)
-      const parseCoord = (v?: string) => parseFloat((v ?? '').replace(',', '.'))
-      const lat = parseCoord(d?.lat)
-      const lng = parseCoord(d?.lng)
-      // maps and google are always derived from the stop name (Sheets exports
-      // HYPERLINK formulas as display text "Obrir", not the actual URL)
-      const maps   = `https://www.google.com/maps/search/${encodeURIComponent(row.nom)}`
-      const google = `https://www.google.com/search?q=${encodeURIComponent(row.nom)}`
-      return {
-        ...row,
-        lat,
-        lng,
-        maps,
-        google,
-        wikipedia: d?.wikipedia || undefined,
-        address:   d?.address   || undefined,
-        info:      d?.info      || undefined,
-      }
-    })
-    .filter(s => !isNaN(s.lat) && !isNaN(s.lng))  // only keep stops we can place on the map
+    const stops: Stop[] = rows
+      .map(row => {
+        const d = dataLookup.get(row.nom)
+        const parseCoord = (v?: string) => parseFloat((v ?? '').replace(',', '.'))
+        const lat = parseCoord(d?.lat)
+        const lng = parseCoord(d?.lng)
+        const maps   = `https://www.google.com/maps/search/${encodeURIComponent(row.nom)}`
+        const google = `https://www.google.com/search?q=${encodeURIComponent(row.nom)}`
+        return {
+          ...row, lat, lng, maps, google,
+          wikipedia: d?.wikipedia || undefined,
+          address:   d?.address   || undefined,
+          info:      d?.info      || undefined,
+        }
+      })
+      .filter(s => !isNaN(s.lat) && !isNaN(s.lng))
 
-  const unmatched = rows.filter(r => !dataLookup.get(r.nom))
-  if (unmatched.length) console.warn('[fetchData] no data tab match:', unmatched.map(r => `"${r.nom}"`).join(', '))
-  console.log(`[fetchData] ${stops.length}/${rows.length} stops have coordinates`)
-  return stops
+    const unmatched = rows.filter(r => !dataLookup.get(r.nom))
+    if (unmatched.length) console.warn('[fetchData] no data tab match:', unmatched.map(r => `"${r.nom}"`).join(', '))
+    console.log(`[fetchData] ${stops.length}/${rows.length} stops have coordinates`)
+    saveCache(stops)
+    return stops
+  } catch (e) {
+    const cached = loadCache()
+    if (cached) { console.warn('[fetchData] fetch failed, using cache:', e); return cached }
+    throw e
+  }
 }
